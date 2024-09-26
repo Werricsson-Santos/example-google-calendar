@@ -14,7 +14,10 @@ import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.CalendarScopes;
 import com.google.api.services.calendar.model.Event;
 import com.google.api.services.calendar.model.EventDateTime;
+import dev.werricsson.google_calendar.example.model.request.EventRequest;
 import lombok.Data;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -22,6 +25,7 @@ import java.io.*;
 import java.security.GeneralSecurityException;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
@@ -30,6 +34,7 @@ import java.util.spi.LocaleServiceProvider;
 @Service
 @Data
 public class CalendarService {
+    private final Logger logger = LoggerFactory.getLogger(CalendarService.class);
 
     private static final String APPLICATION_NAME = "Google Calendar API Spring";
     private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
@@ -89,30 +94,67 @@ public class CalendarService {
 
         String calendarId = "primary";
         event = calendarService.events().insert(calendarId, event).execute();
-        return event.getHtmlLink();
+        // Obtenha o eventId
+        String eventId = event.getId();
+
+        // Retorne o link e o id codificado
+        return "Event link: " + event.getHtmlLink() + ", ID: " + eventId;
     }
 
-    public Event updateEvent(String eventId, LocalDateTime newStartDateTime, LocalDateTime newEndDateTime) throws IOException {
-        // Buscar o evento pelo ID
-        Event event = calendarService.events().get("primary", eventId).execute();
+    public Event getEventById(String eventId) throws IOException {
+        try {
+            // Buscar o evento pelo ID
+            return calendarService.events().get("primary", eventId).execute();
+        } catch (IOException e) {
+            // Logar o erro e lançar a exceção para o controlador tratar
+            throw new RuntimeException("Erro ao buscar o evento com ID: " + eventId, e);
+        }
+    }
 
-        // Atualizar os horários
-        Date newStartDate = Date.from(newStartDateTime.atZone(ZoneId.systemDefault()).toInstant());
-        EventDateTime newStart = new EventDateTime()
-                .setDateTime(new com.google.api.client.util.DateTime(newStartDate))
-                .setTimeZone("America/New_York");
-        event.setStart(newStart);
+    public Event updateEvent(String eventId, EventRequest eventRequest) throws IOException {
+        try {
+            // Buscar o evento pelo ID
+            Event event = calendarService.events().get("primary", eventId).execute();
 
-        Date newEndDate = Date.from(newEndDateTime.atZone(ZoneId.systemDefault()).toInstant());
-        EventDateTime newEnd = new EventDateTime()
-                .setDateTime(new com.google.api.client.util.DateTime(newEndDate))
-                .setTimeZone("America/New_York");
-        event.setEnd(newEnd);
+            // Atualizar o sumário se presente
+            if (eventRequest.getSummary() != null) {
+                event.setSummary(eventRequest.getSummary());
+            }
 
-        // Atualizar o evento no Google Calendar
-        Event updatedEvent = calendarService.events().update("primary", event.getId(), event).execute();
+            // Atualizar o local se presente
+            if (eventRequest.getLocation() != null) {
+                event.setLocation(eventRequest.getLocation());
+            }
 
-        return updatedEvent;
+            // Atualizar a descrição se presente
+            if (eventRequest.getDescription() != null) {
+                event.setDescription(eventRequest.getDescription());
+            }
+
+            // Atualizar o horário de início se presente
+            if (eventRequest.getStartDateTime() != null) {
+                Date newStartDate = Date.from(eventRequest.getStartDateTime().atZone(ZoneId.systemDefault()).toInstant());
+                EventDateTime newStart = new EventDateTime()
+                        .setDateTime(new com.google.api.client.util.DateTime(newStartDate))
+                        .setTimeZone("America/New_York");
+                event.setStart(newStart);
+            }
+
+            // Atualizar o horário de fim se presente
+            if (eventRequest.getEndDateTime() != null) {
+                Date newEndDate = Date.from(eventRequest.getEndDateTime().atZone(ZoneId.systemDefault()).toInstant());
+                EventDateTime newEnd = new EventDateTime()
+                        .setDateTime(new com.google.api.client.util.DateTime(newEndDate))
+                        .setTimeZone("America/New_York");
+                event.setEnd(newEnd);
+            }
+
+            // Atualizar o evento no Google Calendar
+            return calendarService.events().update("primary", event.getId(), event).execute();
+        } catch (Exception e) {
+            logger.info("Não foi possível atualizar o evento:" + eventId, e);
+            throw e;
+        }
     }
 }
 
